@@ -17,7 +17,10 @@ map<string, tradesQ > StockBuyersLookup;
 bool isSellerinQueue = false;
 bool isBuyerinQueue = false;
 
-bool matchingEngine(char buySell, int Trades, string StockName) {
+int getTradeDiff(string Stock) {
+    return 1;// dummy for now
+}
+int matchingEngine(char buySell, int Trades, string StockName) {
     isSellerinQueue = false;
     isBuyerinQueue = false;
 
@@ -28,29 +31,43 @@ bool matchingEngine(char buySell, int Trades, string StockName) {
     if (StockBuyersLookup.find(StockName) != StockBuyersLookup.end())
         isBuyerinQueue = true;
 
-    return isSellerinQueue || isBuyerinQueue;  
+    //return isSellerinQueue || isBuyerinQueue;  
+    if (isSellerinQueue || isBuyerinQueue)
+        //if ((isSellerinQueue == true) && (isBuyerinQueue == true)) 
+            return getTradeDiff(StockName);
+    else
+        return 0; //TODO: Needs fixing
+}
 
+void processTradeHelper(bool *inQueue, map<string, tradesQ > * LookUp, string Stock, int trade) {
+    tradesQ buyerSellerQ;
+    if (*inQueue == true) {
+        buyerSellerQ = (*LookUp).find(Stock)->second;
+        tradesOwner::iterator tempItr;
+        tradesOwner mapTemp = buyerSellerQ.front();
+        tempItr = mapTemp.begin();
+        buyerSellerQ.pop(); // Update queue value
+        tempItr->second -= trade;
+        if (tempItr->second <= 0) {
+            cout <<"Success "<<tempItr->first<<" "<<Stock<<endl;
+            tempItr->second = 0;
+            (*LookUp).erase((*LookUp).find(Stock));
+            // cout <<"Checking Buyer : "<<matchingEngine('S', 1, "S1")<<endl;
+            // cout <<"Checking Seller : "<<matchingEngine('S', 1, "S1")<<endl;
+        } else {
+            // Update value in Queue and update LookUp
+            map <string, int> myMap;
+            myMap.insert(make_pair(tempItr->first, tempItr->second));
+            buyerSellerQ.push(myMap);
+        }
+    }
 }
 
 void processTrade(string Stock, int trade){
+    map<string, tradesQ > * tempLookUp = NULL;
 
-    tradesQ sellerQ;
-    if (isSellerinQueue == true) {
-        sellerQ = StockSellersLookup.find(Stock)->second;
-        tradesOwner::iterator tempItr;
-        tradesOwner mapTemp = sellerQ.front();
-        tempItr = mapTemp.begin();
-        //sellerQ.pop();
-        if (tempItr->second == trade) {
-            cout <<"Success "<<tempItr->first<<" "<<Stock<<endl;
-            tempItr->second = 0;
-            sellerQ.pop();
-            StockSellersLookup.erase(StockSellersLookup.find(Stock));
-            StockBuyersLookup.erase(StockBuyersLookup.find(Stock));
-            cout <<"Checking again : "<<matchingEngine('B', 1, "S1");
-        }
-    }
-    
+    processTradeHelper(&isSellerinQueue, &StockSellersLookup, Stock, trade);
+    processTradeHelper(&isBuyerinQueue, &StockBuyersLookup, Stock, trade);
 }
 int main() {
     int inputSize =  0;
@@ -70,10 +87,10 @@ int main() {
 
         // Check with Matching engine
         bool matchingEngineCheck = matchingEngine(buySellInd, tradeCount, stockName);
-        cout<<"Matching engine reports: "<< matchingEngineCheck <<endl;
+        // cout<<"Matching engine reports: "<< matchingEngineCheck <<endl;
         myMap.insert(make_pair(traderName, tradeCount));
 
-        if (matchingEngineCheck == false){ 
+        if (matchingEngineCheck == 0) { 
             map<string, tradesQ > * tempLookUp = NULL;
             if (buySellInd == 'B')
                 tempLookUp = &StockBuyersLookup;
@@ -93,11 +110,12 @@ int main() {
                 
         } else {
             //Update seller and Buyer as applicable
-            //Place entry for balance traces if Seller is empty for stockName
-
             processTrade(stockName, tradeCount);
-
+            //TODO: Add entry for remaining trades with Buyer/Seller
+            //TODO: output success only when diff is 0.
+            cout <<"Success "<<traderName<<" "<<stockName<<endl;
         }
+        
         inputSize--;
     }
 
