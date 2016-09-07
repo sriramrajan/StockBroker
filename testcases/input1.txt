@@ -1,4 +1,5 @@
-3
+5
 TraderA S   400 S1
 TraderA S   400 S2
-TraderB B   400 S1
+TraderB B   800 S1
+TraderC B   400 S2
