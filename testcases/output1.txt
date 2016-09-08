@@ -1,3 +1,2 @@
 Success TraderA S1
-Success TraderA S2
-Success TraderC S2
+Success TraderC S1

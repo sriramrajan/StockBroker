@@ -5,17 +5,17 @@
 #include <algorithm>
 
 using namespace std;
-//#include <boost/atomic.hpp>
-//#include <boost/lockfree/queue.hpp>
+#include <boost/atomic.hpp>
+#include <boost/lockfree/queue.hpp>
 
 typedef map<string,int> tradesOwner;//Map of trader and # of trades
 typedef queue <tradesOwner> tradesQ; // Queue of tradesOwner
-
 
 map<string, tradesQ > StockSellersLookup;
 map<string, tradesQ > StockBuyersLookup;
 bool isSellerinQueue = false;
 bool isBuyerinQueue = false;
+bool isStockEmpty = false;
 
 bool matchingEngine(char buySell, int Trades, string StockName) {
     isSellerinQueue = false;
@@ -27,69 +27,132 @@ bool matchingEngine(char buySell, int Trades, string StockName) {
     }
     if (StockBuyersLookup.find(StockName) != StockBuyersLookup.end())
         isBuyerinQueue = true;
-
-    return isBuyerinQueue || isSellerinQueue;
+    
+    // Validation for single Queue either buyer or sellers. If both, then we failed
+    if (isBuyerinQueue && isSellerinQueue) {
+        cerr<<"Validation failed for Stock: "<<StockName<<endl;
+        isStockEmpty = true;
+        return false;
+    }
+    if (isBuyerinQueue || isSellerinQueue)
+        return true;
+    else
+        return false;
+    
 }
 
 void updateQ(map<string, tradesQ > * LookUp, int diff, string Stock, string Trader) {
 
         tradesQ buyerSellerQ;
-
-        buyerSellerQ = (*LookUp).find(Stock)->second;
+        if (isStockEmpty == false) 
+            buyerSellerQ = (*LookUp).find(Stock)->second;
         map <string, int> myMap;
         tradesOwner::iterator tempItr;
         if (buyerSellerQ.empty()) {
+            // cout <<"Queue is empty"<<endl;
             myMap.insert(make_pair(Trader, diff));
             buyerSellerQ.push(myMap);
             (*LookUp).insert(make_pair(Stock, buyerSellerQ));
+            tradesOwner mapTemp = buyerSellerQ.front();
+                //mytradeOwners.push_back(mapTemp);
+            tempItr = mapTemp.begin();
+            // cout <<"Over here; "<<tempItr->first<< " has order of "<<tempItr->second<<" trades.\n";
         }
         else {
             tradesOwner mapTemp = buyerSellerQ.front();
             tempItr = mapTemp.begin();
-            tempItr->second = diff;
-            myMap.insert(make_pair(tempItr->first, tempItr->second));
+
+            myMap.insert(make_pair(tempItr->first, diff));
             buyerSellerQ.pop(); // Update queue value
+            (*LookUp).erase((*LookUp).find(Stock));
             buyerSellerQ.push(myMap);
+            (*LookUp).insert(make_pair(Stock, buyerSellerQ));
         }
 }
 
-int processTradeHelper(bool *inQueue, map<string, tradesQ > * LookUp, string Stock, int trade) {
+int processTradeHelper(map<string, tradesQ > * LookUp, string Stock, int trade) {
     int diff = 0;
     tradesQ buyerSellerQ;
-    if (*inQueue == true) {
-        // cout <<"In Queue"<<endl;
-        buyerSellerQ = (*LookUp).find(Stock)->second;
-        tradesOwner::iterator tempItr;
-        tradesOwner mapTemp = buyerSellerQ.front();
-        tempItr = mapTemp.begin();
-        buyerSellerQ.pop(); // Update queue value
-        diff = abs(tempItr->second - trade);
-        tempItr->second -= trade;
-        if (tempItr->second <= 0) {
-            cout <<"Success "<<tempItr->first<<" "<<Stock<<endl;
-            (*LookUp).erase((*LookUp).find(Stock));
-            // cout <<"Checking Buyer : "<<matchingEngine('S', 1, "S1")<<endl;
-            // cout <<"Checking Seller : "<<matchingEngine('S', 1, "S1")<<endl;
-        } else {
-            // Update value in Queue and update LookUp
-            map <string, int> myMap;
-            myMap.insert(make_pair(tempItr->first, tempItr->second));
-            buyerSellerQ.push(myMap);
-            if (LookUp == &StockBuyersLookup)
-                isBuyerinQueue = true;
-        }
-    }
-    return diff;
+
+    // cout <<"In Queue" <<endl;
+    buyerSellerQ = (*LookUp).find(Stock)->second;
+    tradesOwner::iterator tempItr;
+    tradesOwner mapTemp = buyerSellerQ.front();
+    tempItr = mapTemp.begin();
+    buyerSellerQ.pop(); // Update queue value
+
+    string traderName = tempItr->first;
+
+    int tradeVal = tempItr->second;
+    tempItr = mapTemp.end();
+    (*LookUp).erase((*LookUp).find(Stock));
+    // diff = tradeVal - trade;
+    tradeVal -= trade;
+    // cout <<"Diff Actual: "<<tradeVal<<endl;
+    if (tradeVal <= 0) {
+        cout <<"Success "<<traderName<<" "<<Stock<<endl;
+        // cout <<"Checking Buyer : "<<matchingEngine('S', 1, "S1")<<endl;
+        // cout <<"Checking Seller : "<<matchingEngine('S', 1, "S1")<<endl;
+    } else {
+        //Update this trader's queue
+        updateQ(LookUp, diff, Stock, traderName);
+    } 
+    
+    return tradeVal;
 }
 
-int processTrade(string Stock, int trade, char BuySellInd){
+void processTrade(string Stock, int tradesRemain, char BuySellInd, string Trader){
     map<string, tradesQ > * tempLookUp = NULL;
 
-    if (BuySellInd == 'B')
-        return processTradeHelper(&isSellerinQueue, &StockSellersLookup, Stock, trade);
-    else
-        return processTradeHelper(&isBuyerinQueue, &StockBuyersLookup, Stock, trade);
+    int origTrades = tradesRemain; 
+    if (BuySellInd == 'B') { //Contact seller and make a sale
+        if (isSellerinQueue == true) 
+            tradesRemain = processTradeHelper(&StockSellersLookup, Stock, tradesRemain);
+
+        //TODO: Update any remaining trades with Buyer, handle 0 trades also
+        if (tradesRemain > 0)
+            updateQ(&StockBuyersLookup, tradesRemain, Stock, Trader);
+    } else {
+        if (isBuyerinQueue == true) 
+            tradesRemain = processTradeHelper(&StockBuyersLookup, Stock, tradesRemain);
+
+        if (tradesRemain > 0)
+            updateQ(&StockSellersLookup, tradesRemain, Stock, Trader);
+    }
+    if ((tradesRemain == 0) || (tradesRemain > origTrades))
+    {
+        cout <<"Success "<<Trader<<" "<<Stock<<endl;
+    }
+    // return tradesRemain;
 }
+
+void displayStock(string stName, char buySell) {
+    map<string, tradesQ > * LookUp;
+    tradesOwner::iterator tempItr;
+    vector<tradesOwner> mytradeOwners;
+    if (buySell == 'B') 
+        LookUp = &StockBuyersLookup;
+    else
+        LookUp = &StockSellersLookup;
+
+    tradesQ buyerSellerQ;
+    buyerSellerQ = (*LookUp).find(stName)->second;
+
+
+    if (!buyerSellerQ.empty()) {
+        tradesOwner mapTemp = buyerSellerQ.front();
+        mytradeOwners.push_back(mapTemp);
+        tempItr = mapTemp.begin();
+        cout <<tempItr->first<< " has order "<<buySell<< " of "<<tempItr->second \
+             <<" trades of Stock"<<stName<<endl;;
+        buyerSellerQ.pop();
+    }
+    for (tradesOwner myTO: mytradeOwners){
+        buyerSellerQ.push(myTO);
+    }
+    mytradeOwners.clear();
+}
+
 int main() {
     int inputSize =  0;
     tradesQ BuyerQ; 
@@ -107,45 +170,15 @@ int main() {
         myMap.clear();
 
         // Check with Matching engine
+
         bool matchingEngineCheck = matchingEngine(buySellInd, tradeCount, stockName);
         // cout<<"Matching engine reports: "<< matchingEngineCheck <<endl;
         myMap.insert(make_pair(traderName, tradeCount));
 
-        if (matchingEngineCheck == 0) { 
-            map<string, tradesQ > * tempLookUp = NULL;
-            if (buySellInd == 'B')
-                tempLookUp = &StockBuyersLookup;
-            else
-                tempLookUp = &StockSellersLookup;
-            
-            if ((*tempLookUp).find(stockName) != (*tempLookUp).end()) {
-                BuyerQ = (*tempLookUp).find(stockName)->second;
-                BuyerQ.push(myMap);
-            }
-            else
-            {
-                BuyerQ.push(myMap);
-                (*tempLookUp).insert(make_pair(stockName, BuyerQ));
-            }
-
-                
-        } else {
-            //Update seller and Buyer as applicable
-            int Diff = processTrade(stockName, tradeCount, buySellInd);
-            // cout <<"Diff1 :"<<Diff<<endl;
-            if (Diff != 0) {
-                if (buySellInd == 'B') {
-                    updateQ(&StockSellersLookup, Diff, stockName, traderName);
-                }
-                else {
-                    updateQ(&StockBuyersLookup, Diff, stockName, traderName);
-                }
-            }
-            
-            if (Diff == 0)
-                cout <<"Success "<<traderName<<" "<<stockName<<endl;
-        }
-        
+        processTrade(stockName, tradeCount, buySellInd, traderName);
+        #ifdef DEBUG
+        displayStock(stockName, buySellInd);         
+        #endif
         inputSize--;
     }
 
